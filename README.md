@@ -30,13 +30,17 @@ pnpm dev
 
 Keep the terminal running while using the app. Press Ctrl+C to stop the servers.
 
-## Milestone 2
+## Features
 
-- **Login (`/login`):** a placeholder Google sign-in button.
-- **Feed (`/`):** view takes, vote Agree or Disagree, and sort by Newest, Most Voted, or Most Controversial.
-- **My Posts (`/my-posts`):** create and delete posts as demo user Alex. The Edit button is a placeholder.
+- **Login (`/login`):** sign in with Google or sign out.
+- **Feed (`/`):** view takes, vote, and sort by newest, most voted, or most controversial.
+- **My Posts (`/my-posts`):** create, edit, and delete your own posts.
 
-The frontend communicates with the local Express API. Posts and votes are stored in memory and reset when the backend restarts. Voting currently allows repeated votes. Firebase Firestore and real authentication are planned for Milestone 3.
+Posts and votes are stored in Firestore. Firebase Authentication identifies users; the server verifies sign-in tokens and checks post ownership.
+
+## Seed Data
+
+Codex added four sample takes and vote counts to help populate the feed. These examples are labeled **Hot Takes** and are separate from users' posts. Existing seed posts are left unchanged.
 
 ## API Routes
 
@@ -51,7 +55,8 @@ The frontend communicates with the local Express API. Posts and votes are stored
 
 - `frontend/src/pages/`: Login, Feed, and My Posts
 - `frontend/src/components/`: shared UI components
-- `backend/server.ts`: Express server, routes, and sample data
+- `backend/server.ts`: Express server and routes
+- `backend/seed.ts`: sample take data
 - `lib/types/index.ts`: shared TypeScript types
 
 This README was written with Codex assistance.

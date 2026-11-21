@@ -1,98 +1,144 @@
-import express, { Express } from "express";
+import express, { Express, Request, Response, NextFunction } from "express";
 import cors from "cors";
-import { Take } from "@full-stack/types";
+import admin from "firebase-admin";
+import { existsSync } from "fs";
+import { resolve } from "path";
 
+const localCredentials = resolve(
+    process.cwd(),
+    "../firebase-service-account.json",
+);
+if (
+    !process.env.GOOGLE_APPLICATION_CREDENTIALS &&
+    existsSync(localCredentials)
+) {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = localCredentials;
+}
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
+const db = admin.firestore();
 const app: Express = express();
-
-const hostname = "0.0.0.0";
-const port = 8080;
-
 app.use(cors());
 app.use(express.json());
 
-let takes: Take[] = [
-    {
-        id: "1",
-        text: "Pineapple belongs on pizza.",
-        author: "Alex",
-        agreeVotes: 50,
-        disagreeVotes: 50,
-        createdAt: "2026-11-12T18:00:00Z",
-    },
-    {
-        id: "2",
-        text: "Recorded lectures should be available for every class.",
-        author: "Sam",
-        agreeVotes: 90,
-        disagreeVotes: 10,
-        createdAt: "2026-11-12T17:00:00Z",
-    },
-    {
-        id: "3",
-        text: "Winter is the best season in Ithaca.",
-        author: "Jordan",
-        agreeVotes: 5,
-        disagreeVotes: 3,
-        createdAt: "2026-11-12T16:00:00Z",
-    },
-];
+type AuthRequest = Request & { user?: admin.auth.DecodedIdToken };
 
-let nextId = 4;
+async function authenticate(
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+) {
+    const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+    if (!token) {
+        res.status(401).json({ message: "Sign in to continue." });
+        return;
+    }
+    try {
+        req.user = await admin.auth().verifyIdToken(token);
+        next();
+    } catch {
+        res.status(401).json({ message: "Invalid or expired sign-in." });
+    }
+}
 
-app.get("/takes", (req, res) => {
-    res.json(takes);
+app.get("/takes", async (_req, res) => {
+    try {
+        const snapshot = await db.collection("takes").get();
+        res.json(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Could not load takes." });
+    }
 });
 
-app.post("/takes", (req, res) => {
-    const { text } = req.body;
-    if (typeof text !== "string" || text.trim() === "") {
+app.post("/takes", authenticate, async (req: AuthRequest, res) => {
+    const text = req.body?.text;
+    if (typeof text !== "string" || !text.trim()) {
         res.status(400).json({ message: "Post text is required." });
         return;
     }
-
-    const take: Take = {
-        id: String(nextId++),
-        text: text.trim(),
-        author: "Alex",
-        agreeVotes: 0,
-        disagreeVotes: 0,
-        createdAt: new Date().toISOString(),
-    };
-    takes.push(take);
-    res.status(201).json(take);
+    try {
+        const take = {
+            text: text.trim(),
+            author: req.user!.name || req.user!.email || "User",
+            authorId: req.user!.uid,
+            agreeVotes: 0,
+            disagreeVotes: 0,
+            createdAt: new Date().toISOString(),
+        };
+        const ref = db.collection("takes").doc();
+        await ref.set(take);
+        res.status(201).json({ ...take, id: ref.id });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Could not create take." });
+    }
 });
 
-app.put("/takes/:id", (req, res) => {
-    const take = takes.find((take) => take.id === req.params.id);
-    if (!take) {
-        res.status(404).json({ message: "Take not found." });
+app.put("/takes/:id", authenticate, async (req: AuthRequest, res) => {
+    const { vote, text } = req.body || {};
+    if (
+        vote !== "agree" &&
+        vote !== "disagree" &&
+        (typeof text !== "string" || !text.trim())
+    ) {
+        res.status(400).json({
+            message: "Provide a vote or nonempty post text.",
+        });
         return;
     }
-
-    if (req.body.vote === "agree") {
-        take.agreeVotes += 1;
-    } else if (req.body.vote === "disagree") {
-        take.disagreeVotes += 1;
-    } else if (typeof req.body.text === "string" && req.body.text.trim() !== "") {
-        take.text = req.body.text.trim();
-    } else {
-        res.status(400).json({ message: "Provide a vote or nonempty post text." });
-        return;
+    const ref = db.collection("takes").doc(req.params.id);
+    try {
+        const doc = await ref.get();
+        if (!doc.exists) {
+            res.status(404).json({ message: "Take not found." });
+            return;
+        }
+        const take = doc.data()!;
+        if (vote === "agree") {
+            take.agreeVotes += 1;
+            await ref.update({ agreeVotes: take.agreeVotes });
+        } else if (vote === "disagree") {
+            take.disagreeVotes += 1;
+            await ref.update({ disagreeVotes: take.disagreeVotes });
+        } else {
+            if (take.authorId !== req.user!.uid) {
+                res.status(403).json({
+                    message: "You can only edit your own posts.",
+                });
+                return;
+            }
+            take.text = text.trim();
+            await ref.update({ text: take.text });
+        }
+        res.json({ ...take, id: doc.id });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Could not update take." });
     }
-    res.json(take);
 });
 
-app.delete("/takes/:id", (req, res) => {
-    const take = takes.find((take) => take.id === req.params.id);
-    if (!take) {
-        res.status(404).json({ message: "Take not found." });
-        return;
+app.delete("/takes/:id", authenticate, async (req: AuthRequest, res) => {
+    const ref = db.collection("takes").doc(req.params.id);
+    try {
+        const doc = await ref.get();
+        if (!doc.exists) {
+            res.status(404).json({ message: "Take not found." });
+            return;
+        }
+        if (doc.data()!.authorId !== req.user!.uid) {
+            res.status(403).json({
+                message: "You can only delete your own posts.",
+            });
+            return;
+        }
+        await ref.delete();
+        res.json({ message: "Take deleted." });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Could not delete take." });
     }
-
-    takes = takes.filter((take) => take.id !== req.params.id);
-    res.json({ message: "Take deleted." });
 });
 
-app.listen(port, hostname, () => {
-    console.log("Listening on http://localhost:8080");
+app.listen(Number(process.env.PORT) || 8080, "0.0.0.0", () => {
+    console.log("Backend listening on port " + (process.env.PORT || 8080));
 });

@@ -1,114 +1,176 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Take } from "@full-stack/types";
-import { BACKEND_BASE_PATH } from "../constants/Navigation";
+import { api } from "../api";
+import { useAuth } from "../auth";
 
 const MyPosts = () => {
-    const [myPosts, setMyPosts] = useState<Take[]>([]);
+    const { user, loading: authLoading } = useAuth();
+    const [posts, setPosts] = useState<Take[]>([]);
     const [text, setText] = useState("");
-    const [loading, setLoading] = useState(true);
+    const [editing, setEditing] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
 
     useEffect(() => {
-        fetch(`${BACKEND_BASE_PATH}/takes`)
-            .then((res) => {
-                if (!res.ok) {
-                    throw new Error("Could not load posts.");
-                }
-                return res.json();
-            })
+        setPosts([]);
+        setText("");
+        setEditing(null);
+        setError("");
+        if (!user) return;
+        let active = true;
+        setLoading(true);
+        api("/takes")
             .then((data: Take[]) => {
-                setMyPosts(data.filter((post) => post.author === "Alex"));
-                setLoading(false);
+                if (active)
+                    setPosts(data.filter((post) => post.authorId === user.uid));
             })
             .catch(() => {
-                setError("Could not load posts. Check that the backend is running.");
-                setLoading(false);
+                if (active) setError("Could not load posts.");
+            })
+            .finally(() => {
+                if (active) setLoading(false);
             });
-    }, []);
+        return () => {
+            active = false;
+        };
+    }, [user]);
 
-    const createPost = () => {
-        setError("");
+    const savePost = async () => {
         setSaving(true);
-        fetch(`${BACKEND_BASE_PATH}/takes`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text }),
-        })
-            .then((res) => {
-                if (!res.ok) {
-                    throw new Error("Could not create post.");
-                }
-                return res.json();
-            })
-            .then((post: Take) => {
-                setMyPosts((currentPosts) => [post, ...currentPosts]);
-                setText("");
-                setSaving(false);
-            })
-            .catch(() => {
-                setError("Could not create post. Please try again.");
-                setSaving(false);
-            });
-    };
-
-    const deletePost = (id: string) => {
         setError("");
-        fetch(`${BACKEND_BASE_PATH}/takes/${id}`, {
-            method: "DELETE",
-        })
-            .then((res) => {
-                if (!res.ok) {
-                    throw new Error("Could not delete post.");
-                }
-                setMyPosts((currentPosts) => currentPosts.filter((post) => post.id !== id));
-            })
-            .catch(() => setError("Could not delete post. Please try again."));
+        try {
+            const post: Take = await api(
+                editing ? `/takes/${editing}` : "/takes",
+                {
+                    method: editing ? "PUT" : "POST",
+                    body: JSON.stringify({ text }),
+                },
+            );
+            setPosts((current) =>
+                editing
+                    ? current.map((item) => (item.id === post.id ? post : item))
+                    : [post, ...current],
+            );
+            setText("");
+            setEditing(null);
+        } catch (err) {
+            setError(
+                err instanceof Error ? err.message : "Could not save post.",
+            );
+        } finally {
+            setSaving(false);
+        }
     };
 
-    return (
-        <main className='my-posts-page'>
-            <h1>My Posts</h1>
-            <p>Create a new take and manage the opinions you have shared.</p>
-            <p>Demo user: Alex. Posts reset when the backend restarts.</p>
+    const deletePost = async (id: string) => {
+        setError("");
+        try {
+            await api(`/takes/${id}`, { method: "DELETE" });
+            setPosts((current) => current.filter((post) => post.id !== id));
+            if (editing === id) {
+                setEditing(null);
+                setText("");
+            }
+        } catch (err) {
+            setError(
+                err instanceof Error ? err.message : "Could not delete post.",
+            );
+        }
+    };
 
-            <h2>Create a Post</h2>
-            <form className='post-form' onSubmit={(event) => {
-                event.preventDefault();
-                createPost();
-            }}>
-                <label htmlFor='post-text'>Your take</label>
+    if (authLoading) return <main className="my-posts-page">Loading...</main>;
+    if (!user)
+        return (
+            <main className="my-posts-page">
+                <h1>My Posts</h1>
+
+                <p>
+                    <Link to="/login">Sign in</Link> to manage your posts.
+                </p>
+            </main>
+        );
+    return (
+        <main className="my-posts-page">
+            <h1>My Posts</h1>
+
+            <p>Create a new take and manage the opinions you have shared.</p>
+
+            <h2>{editing ? "Edit Post" : "Create a Post"}</h2>
+
+            <form
+                className="post-form"
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    void savePost();
+                }}
+            >
+                <label htmlFor="post-text">Your take</label>
+
                 <textarea
-                    id='post-text'
-                    name='text'
+                    id="post-text"
                     rows={4}
-                    placeholder='What is your hot take?'
                     value={text}
                     onChange={(event) => setText(event.target.value)}
                     disabled={saving}
                     required
                 />
-                <button type='submit' disabled={saving || text.trim() === ""}>
-                    {saving ? "Posting..." : "Post"}
+
+                <button type="submit" disabled={saving || !text.trim()}>
+                    {saving ? "Saving..." : editing ? "Save changes" : "Post"}
                 </button>
+
+                {editing && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setEditing(null);
+                            setText("");
+                        }}
+                    >
+                        Cancel edit
+                    </button>
+                )}
             </form>
 
-            {error && <p>{error}</p>}
+            {error && <p role="alert">{error}</p>}
             <h2>Your Posts</h2>
+
             {loading && <p>Loading posts...</p>}
-            {!loading && !error && myPosts.length === 0 && <p>No posts yet. Share your first take!</p>}
-            {myPosts.map((post) => (
-                <article key={post.id} className='take-card'>
+            {!loading && !error && posts.length === 0 && (
+                <p>No posts yet. Share your first take!</p>
+            )}
+            {posts.map((post) => (
+                <article key={post.id} className="take-card">
                     <h3>{post.text}</h3>
-                    <p>Agree: {post.agreeVotes} | Disagree: {post.disagreeVotes}</p>
-                    <div className='post-actions'>
-                        <button type='button' disabled title='Editing is coming soon'>Edit</button>
-                        <button type='button' onClick={() => deletePost(post.id)}>Delete</button>
+
+                    <p>
+                        Agree: {post.agreeVotes} | Disagree:{" "}
+                        {post.disagreeVotes}
+                    </p>
+
+                    <div className="post-actions">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setEditing(post.id);
+                                setText(post.text);
+                            }}
+                        >
+                            Edit
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => void deletePost(post.id)}
+                        >
+                            Delete
+                        </button>
                     </div>
                 </article>
             ))}
         </main>
     );
 };
-
 export default MyPosts;

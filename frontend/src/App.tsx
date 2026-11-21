@@ -4,6 +4,7 @@ import ErrorPage from "./pages/Error";
 import RootLayout from "./layouts/RootLayout";
 import { PATHS } from "./constants/Navigation";
 import "./index.css";
+import { AuthProvider } from "./auth";
 
 const router = createBrowserRouter([
     {
@@ -22,7 +23,9 @@ const router = createBrowserRouter([
 export default function App() {
     return (
         <MantineProvider withGlobalStyles withNormalizeCSS>
-            <RouterProvider router={router} />
+            <AuthProvider>
+                <RouterProvider router={router} />
+            </AuthProvider>
         </MantineProvider>
     );
 }

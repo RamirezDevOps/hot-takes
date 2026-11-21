@@ -1,84 +1,37 @@
-import {
-    createStyles,
-    Header,
-    Container,
-    Group,
-    rem,
-} from "@mantine/core";
 import { NavLink } from "react-router-dom";
-
-const useStyles = createStyles((theme) => ({
-    header: {
-        display: "flex",
-        justifyContent: "start",
-        gap: "2rem",
-        alignItems: "center",
-        height: "100%",
-    },
-
-    link: {
-        display: "block",
-        lineHeight: 1,
-        padding: `${rem(8)} ${rem(12)}`,
-        borderRadius: theme.radius.sm,
-        textDecoration: "none",
-        color:
-            theme.colorScheme === "dark"
-                ? theme.colors.dark[0]
-                : theme.colors.gray[7],
-        fontSize: theme.fontSizes.sm,
-        fontWeight: 500,
-
-        "&:hover": {
-            backgroundColor:
-                theme.colorScheme === "dark"
-                    ? theme.colors.dark[6]
-                    : theme.colors.gray[0],
-        },
-    },
-
-    linkActive: {
-        "&, &:hover": {
-            backgroundColor: theme.fn.variant({
-                variant: "light",
-                color: theme.primaryColor,
-            }).background,
-            color: theme.fn.variant({
-                variant: "light",
-                color: theme.primaryColor,
-            }).color,
-        },
-    },
-}));
 
 interface HeaderSimpleProps {
     links: { link: string; label: string }[];
 }
 
 export function HeaderSimple({ links }: HeaderSimpleProps) {
-    const { classes, cx } = useStyles();
-
-    const items = links.map((link) => (
-        <NavLink
-            key={link.label}
-            to={link.link}
-            end={link.link === "/"}
-            className={({ isActive }) => cx(classes.link, {
-                [classes.linkActive]: isActive,
-            })}
-        >
-            {link.label}
-        </NavLink>
-    ));
-
     return (
-        <Header height={60}>
-            <Container className={classes.header}>
-                <strong>Hot Takes</strong>
-                <Group spacing={5}>
-                    {items}
-                </Group>
-            </Container>
-        </Header>
+        <header className="border-b border-slate-200 bg-white">
+            <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-4 sm:px-8">
+                <NavLink to="/" className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-slate-900 no-underline">
+                    <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-lg">✦</span>
+                    Hot Takes
+                </NavLink>
+
+                <nav aria-label="Main navigation" className="flex flex-wrap items-center gap-1">
+                    {links.map((link) => (
+                        <NavLink
+                            key={link.label}
+                            to={link.link}
+                            end={link.link === "/"}
+                            className={({ isActive }) =>
+                                `rounded-lg px-3 py-2 text-sm font-semibold no-underline transition-colors sm:px-4 ${
+                                    isActive
+                                        ? "bg-orange-50 text-orange-700"
+                                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                }`
+                            }
+                        >
+                            {link.label}
+                        </NavLink>
+                    ))}
+                </nav>
+            </div>
+        </header>
     );
 }

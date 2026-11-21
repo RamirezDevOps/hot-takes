@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Take } from "@full-stack/types";
-import { BACKEND_BASE_PATH } from "../constants/Navigation";
+import { api } from "../api";
+import { useAuth } from "../auth";
+import { Link } from "react-router-dom";
 
 const getControversyScore = (take: Take) => {
     const total = take.agreeVotes + take.disagreeVotes;
@@ -14,71 +16,84 @@ const getControversyScore = (take: Take) => {
 };
 
 const Feed = () => {
+    const { user } = useAuth();
     const [takes, setTakes] = useState<Take[]>([]);
     const [sortBy, setSortBy] = useState("newest");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
     useEffect(() => {
-        fetch(`${BACKEND_BASE_PATH}/takes`)
-            .then((res) => {
-                if (!res.ok) {
-                    throw new Error("Could not load takes.");
-                }
-                return res.json();
-            })
+        api("/takes")
             .then((data: Take[]) => {
                 setTakes(data);
                 setLoading(false);
             })
             .catch(() => {
-                setError("Could not load takes. Check that the backend is running.");
+                setError(
+                    "Could not load takes. Check that the backend is running.",
+                );
                 setLoading(false);
             });
     }, []);
 
     const vote = (id: string, choice: string) => {
         setError("");
-        fetch(`${BACKEND_BASE_PATH}/takes/${id}`, {
+        api(`/takes/${id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ vote: choice }),
         })
-            .then((res) => {
-                if (!res.ok) {
-                    throw new Error("Could not record vote.");
-                }
-                return res.json();
-            })
             .then((updatedTake: Take) => {
-                setTakes((currentTakes) => currentTakes.map((take) => (
-                    take.id === updatedTake.id ? updatedTake : take
-                )));
+                setTakes((currentTakes) =>
+                    currentTakes.map((take) =>
+                        take.id === updatedTake.id ? updatedTake : take,
+                    ),
+                );
             })
             .catch(() => setError("Could not record vote. Please try again."));
     };
 
     const sortedTakes = [...takes].sort((a, b) => {
         if (sortBy === "voted") {
-            return (b.agreeVotes + b.disagreeVotes) - (a.agreeVotes + a.disagreeVotes);
+            return (
+                b.agreeVotes +
+                b.disagreeVotes -
+                (a.agreeVotes + a.disagreeVotes)
+            );
         }
         if (sortBy === "controversial") {
             return getControversyScore(b) - getControversyScore(a);
         }
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return (
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
     });
 
     return (
-        <main className='feed-page'>
+        <main className="feed-page">
             <h1>Hot Takes</h1>
+
             <p>Share your opinions. See who agrees.</p>
 
-            <div className='feed-sort'>
-                <label htmlFor='sort'>Sort by</label>
-                <select id='sort' value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
-                    <option value='newest'>Newest</option>
-                    <option value='voted'>Most Voted</option>
-                    <option value='controversial'>Most Controversial</option>
+            {!user && (
+                <p>
+                    <Link to="/login">Sign in</Link> to vote.
+                </p>
+            )}
+
+            <div className="feed-sort">
+                <label htmlFor="sort">Sort by</label>
+
+                <select
+                    id="sort"
+                    value={sortBy}
+                    onChange={(event) => setSortBy(event.target.value)}
+                >
+                    <option value="newest">Newest</option>
+
+                    <option value="voted">Most Voted</option>
+
+                    <option value="controversial">Most Controversial</option>
                 </select>
             </div>
 
@@ -87,14 +102,25 @@ const Feed = () => {
             {!loading && !error && takes.length === 0 && <p>No takes yet.</p>}
 
             {sortedTakes.map((take) => (
-                <article key={take.id} className='take-card'>
-                    <p className='take-author'>Posted by {take.author}</p>
+                <article key={take.id} className="take-card">
+                    <p className="take-author">Posted by {take.author}</p>
+
                     <h2>{take.text}</h2>
-                    <div className='take-votes'>
-                        <button type='button' onClick={() => vote(take.id, "agree")}>
+
+                    <div className="take-votes">
+                        <button
+                            type="button"
+                            disabled={!user}
+                            onClick={() => vote(take.id, "agree")}
+                        >
                             Agree ({take.agreeVotes})
                         </button>
-                        <button type='button' onClick={() => vote(take.id, "disagree")}>
+
+                        <button
+                            type="button"
+                            disabled={!user}
+                            onClick={() => vote(take.id, "disagree")}
+                        >
                             Disagree ({take.disagreeVotes})
                         </button>
                     </div>
